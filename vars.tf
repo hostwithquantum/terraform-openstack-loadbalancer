@@ -44,6 +44,7 @@ variable "def_values" {
     monitor_max_retries       = string
     monitor_max_retries_down  = string
     member_address            = list(string)
+    member_name               = list(string)
     member_subnet_id          = string
     member_port               = string
   })
@@ -60,6 +61,7 @@ variable "def_values" {
     monitor_max_retries       = "5"
     monitor_max_retries_down  = "3"
     member_address            = []
+    member_name               = []
     member_subnet_id          = ""
     member_port               = "80"
   }

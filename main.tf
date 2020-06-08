@@ -1,3 +1,6 @@
+############################
+### Create load balancer ###
+############################
 resource "openstack_lb_loadbalancer_v2" "loadbalancer" {
   name               = "${var.name}-loadbalancer"
   description        = var.lb_description
@@ -6,37 +9,46 @@ resource "openstack_lb_loadbalancer_v2" "loadbalancer" {
   admin_state_up     = "true"
 }
 
+###################
+### Create pool ###
+###################
 resource "openstack_lb_pool_v2" "lb_pool" {
   for_each = var.listeners
 
-  name            = lookup(each.value, "lb_pool_name", format("%s-%s-%s", var.name, each.key, "lb_pool"))
   description     = var.lb_description
+  name            = lookup(each.value, "lb_pool_name", format("%s-%s-%s", var.name, each.key, "lb_pool"))
   protocol        = lookup(each.value, "lb_pool_protocol", var.def_values.lb_pool_protocol)
   lb_method       = lookup(each.value, "lb_pool_method", var.def_values.lb_pool_method)
   loadbalancer_id = openstack_lb_loadbalancer_v2.loadbalancer.id
 }
 
+#######################
+### Create listener ###
+#######################
 resource "openstack_lb_listener_v2" "listener" {
   for_each = var.listeners
 
-  name             = lookup(each.value, "listener_name", format("%s-%s-%s", var.name, each.key, "listener"))
   description      = var.lb_description
+  name             = lookup(each.value, "listener_name", format("%s-%s-%s", var.name, each.key, "listener"))
   protocol         = lookup(each.value, "listener_protocol", var.def_values.listener_protocol)
   protocol_port    = lookup(each.value, "listener_protocol_port", var.def_values.listener_protocol_port)
   connection_limit = lookup(each.value, "listener_connection_limit", var.def_values.listener_connection_limit)
   admin_state_up   = "true"
   loadbalancer_id  = openstack_lb_loadbalancer_v2.loadbalancer.id
   default_pool_id  = openstack_lb_pool_v2.lb_pool[each.key].id
-  #  #  default_tls_container_ref = var.certificate != "" ? join(",", openstack_keymanager_container_v1.tls.*.container_ref) : ""
+  # default_tls_container_ref = var.certificate != "" ? join(",", openstack_keymanager_container_v1.tls.*.container_ref) : ""
 }
 
-##### monitor has different parameters to http* and tcp
-##### so create the resource based on lb_pool_protocol
+######################
+### Create monitor ###
+######################
+# monitor has different parameters to http* and tcp
+# Create non TCP monitor
 resource "openstack_lb_monitor_v2" "lb_monitor" {
   for_each = { for k, r in var.listeners : k => r if r["lb_pool_protocol"] != "TCP" }
 
-  name             = lookup(each.value, "monitor_name", format("%s-%s-%s", var.name, each.key, "lb_monitor"))
   pool_id          = openstack_lb_pool_v2.lb_pool[each.key].id
+  name             = lookup(each.value, "monitor_name", format("%s-%s-%s", var.name, each.key, "lb_monitor"))
   type             = lookup(each.value, "lb_pool_protocol", var.def_values.lb_pool_protocol)
   url_path         = lookup(each.value, "monitor_url_path", var.def_values.monitor_url_path)
   expected_codes   = lookup(each.value, "monitor_expected_codes", var.def_values.monitor_expected_codes)
@@ -46,11 +58,12 @@ resource "openstack_lb_monitor_v2" "lb_monitor" {
   max_retries_down = lookup(each.value, "monitor_max_retries_down", var.def_values.monitor_max_retries_down)
 }
 
+# Create TCP monitor
 resource "openstack_lb_monitor_v2" "lb_monitor_tcp" {
   for_each = { for k, r in var.listeners : k => r if r["lb_pool_protocol"] == "TCP" }
 
-  name             = lookup(each.value, "monitor_name", format("%s-%s-%s", var.name, each.key, "lb_monitor"))
   pool_id          = openstack_lb_pool_v2.lb_pool[each.key].id
+  name             = lookup(each.value, "monitor_name", format("%s-%s-%s", var.name, each.key, "lb_monitor"))
   type             = lookup(each.value, "lb_pool_protocol", var.def_values.lb_pool_protocol)
   delay            = lookup(each.value, "monitor_delay", var.def_values.monitor_delay)
   timeout          = lookup(each.value, "monitor_timeout", var.def_values.monitor_timeout)
@@ -58,14 +71,19 @@ resource "openstack_lb_monitor_v2" "lb_monitor_tcp" {
   max_retries_down = lookup(each.value, "monitor_max_retries_down", var.def_values.monitor_max_retries_down)
 }
 
+###########################
+### Add members to pool ###
+###########################
 resource "openstack_lb_members_v2" "members" {
   for_each = var.listeners
 
   pool_id = openstack_lb_pool_v2.lb_pool[each.key].id
 
   dynamic "member" {
-    for_each = lookup(each.value, "member_address", [])
+    # If member_name is specified, it creates a map name: ip, otherwise ip: ip
+    for_each = contains(keys(each.value), "member_name") ? zipmap(each.value.member_name, each.value.member_address) : zipmap(each.value.member_address, each.value.member_address)
     content {
+      name          = member.key
       address       = member.value
       subnet_id     = each.value.member_subnet_id
       protocol_port = lookup(each.value, "member_port", var.def_values.member_port)
