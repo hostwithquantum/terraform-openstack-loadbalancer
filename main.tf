@@ -20,6 +20,14 @@ resource "openstack_lb_pool_v2" "lb_pool" {
   protocol        = lookup(each.value, "lb_pool_protocol", var.def_values.lb_pool_protocol)
   lb_method       = lookup(each.value, "lb_pool_method", var.def_values.lb_pool_method)
   loadbalancer_id = openstack_lb_loadbalancer_v2.loadbalancer.id
+
+  dynamic "persistence" {
+    for_each = contains(keys(each.value), "lb_sess_persistence") ? list(each.value["lb_sess_persistence"]) : []
+    content {
+      type        = persistence.value
+      cookie_name = lookup(each.value, "lb_sess_persistence_cookie_name", var.def_values.lb_sess_persistence_cookie_name)
+    }
+  }
 }
 
 #######################
