@@ -6,6 +6,7 @@ resource "openstack_lb_loadbalancer_v2" "loadbalancer" {
   description        = var.lb_description
   vip_subnet_id      = var.lb_vip_subnet_id
   security_group_ids = var.lb_security_group_ids
+  flavor_id          = var.lb_flavor_id
   admin_state_up     = "true"
 }
 
